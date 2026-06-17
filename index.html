@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>誤薬防止システム</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f5f5f5; }
+    .app { max-width: 420px; margin: 0 auto; padding: 16px; }
+    .header { text-align: center; padding: 16px 0; background: #185FA5; color: white; border-radius: 12px; margin-bottom: 16px; }
+    .header h1 { font-size: 18px; }
+    .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+    .label { font-size: 12px; color: #888; margin-bottom: 6px; }
+    .inp { width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 10px; font-size: 16px; }
+    .timing-row { display: flex; gap: 8px; margin-top: 4px; }
+    .tbtn { flex: 1; padding: 14px; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; border: 1px solid #ddd; background: #f5f5f5; color: #888; }
+    .tbtn.sel-朝 { background: #FAEEDA; color: #854F0B; border-color: #EF9F27; }
+    .tbtn.sel-昼 { background: #E6F1FB; color: #185FA5; border-color: #378ADD; }
+    .tbtn.sel-夜 { background: #EEEDFE; color: #3C3489; border-color: #7F77DD; }
+    .speak-btn { width: 100%; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; border: none; background: #185FA5; color: white; margin-top: 12px; }
+    .action-row { display: flex; gap: 10px; margin-top: 12px; }
+    .ok-btn { flex: 1; padding: 18px; border-radius: 8px; font-size: 20px; font-weight: bold; cursor: pointer; border: none; background: #3B6D11; color: white; }
+    .ng-btn { flex: 1; padding: 18px; border-radius: 8px; font-size: 20px; font-weight: bold; cursor: pointer; border: none; background: #A32D2D; color: white; }
+    .result-card { background: #f0f0f0; border-radius: 12px; padding: 16px; margin-top: 12px; display: none; }
+    .result-card.show { display: block; }
+    .result-name { font-size: 26px; font-weight: bold; margin-bottom: 4px; }
+    .badge { display: inline-block; padding: 5px 16px; border-radius: 20px; font-size: 16px; font-weight: bold; }
+    .badge-朝 { background: #FAEEDA; color: #854F0B; }
+    .badge-昼 { background: #E6F1FB; color: #185FA5; }
+    .badge-夜 { background: #EEEDFE; color: #3C3489; }
+    .log-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: white; border-radius: 8px; margin-bottom: 6px; }
+    .log-item.ok { background: #EAF3DE; }
+    .log-item.ng { background: #FCEBEB; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; background: #e0e0e0; border-radius: 8px; padding: 4px; }
+    .tab { flex: 1; padding: 8px; text-align: center; font-size: 13px; border-radius: 6px; cursor: pointer; border: none; background: transparent; color: #888; }
+    .tab.active { background: white; color: #185FA5; font-weight: bold; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .empty { text-align: center; padding: 20px; color: #aaa; font-size: 14px; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>💊 誤薬防止システム</h1>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('input',this)">✏️ 入力</button>
+    <button class="tab" onclick="switchTab('log',this)">📋 記録</button>
+  </div>
+
+  <div id="panel-input" class="panel active">
+    <div class="card">
+      <div class="label">氏名</div>
+      <input class="inp" id="f-name" placeholder="例：藤原京子" />
+    </div>
+    <div class="card">
+      <div class="label">服薬タイミング</div>
+      <div class="timing-row">
+        <button class="tbtn" id="btn-朝" onclick="selT('朝')">朝</button>
+        <button class="tbtn" id="btn-昼" onclick="selT('昼')">昼</button>
+        <button class="tbtn" id="btn-夜" onclick="selT('夜')">夜</button>
+      </div>
+    </div>
+    <button class="speak-btn" onclick="doSpeak()">🔊 音声で読み上げる</button>
+
+    <div class="result-card" id="result-card">
+      <div class="result-name" id="res-name"></div>
+      <span class="badge" id="res-badge"></span>
+      <div class="action-row">
+        <button class="ok-btn" onclick="saveRecord(true)">✓ 投薬した</button>
+        <button class="ng-btn" onclick="saveRecord(false)">✗ 未投薬</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="panel-log" class="panel">
+    <div id="log-list"><div class="empty">まだ記録がありません</div></div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, orderBy, query } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBLKOfxq12B8McwKlNjnF-zxSYBy3_g0dQ",
+    authDomain: "yakubukuro.firebaseapp.com",
+    projectId: "yakubukuro",
+    storageBucket: "yakubukuro.firebasestorage.app",
+    messagingSenderId: "994315083600",
+    appId: "1:994315083600:web:39c4655265d1e736d7d655"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  let timing = '';
+  let pendingName = '';
+  let pendingTiming = '';
+
+  window.switchTab = function(tab, el) {
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('panel-'+tab).classList.add('active');
+    if(tab==='log') loadLog();
+  }
+
+  window.selT = function(t) {
+    timing = t;
+    ['朝','昼','夜'].forEach(x=>{
+      document.getElementById('btn-'+x).className='tbtn'+(x===t?' sel-'+x:'');
+    });
+  }
+
+  window.doSpeak = function() {
+    const name = document.getElementById('f-name').value.trim();
+    if(!name){ alert('氏名を入力してください'); return; }
+    if(!timing){ alert('朝・昼・夜を選んでください'); return; }
+    pendingName = name;
+    pendingTiming = timing;
+    document.getElementById('res-name').textContent = name + ' さん';
+    const badge = document.getElementById('res-badge');
+    badge.textContent = timing + '薬';
+    badge.className = 'badge badge-' + timing;
+    document.getElementById('result-card').classList.add('show');
+    const u = new SpeechSynthesisUtterance(`${name}さん、${timing}の薬です。確認してください。`);
+    u.lang = 'ja-JP';
+    u.rate = 0.9;
+    window.speechSynthesis.speak(u);
+  }
+
+  window.saveRecord = async function(ok) {
+    const now = new Date();
+    await addDoc(collection(db, 'records'), {
+      name: pendingName,
+      timing: pendingTiming,
+      ok: ok,
+      date: now.toLocaleDateString('ja-JP'),
+      time: now.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'}),
+      createdAt: now
+    });
+    document.getElementById('result-card').classList.remove('show');
+    document.getElementById('f-name').value = '';
+    timing = '';
+    ['朝','昼','夜'].forEach(x=>document.getElementById('btn-'+x).className='tbtn');
+    const u = new SpeechSynthesisUtterance(ok ? '投薬を記録しました。' : '未投薬として記録しました。');
+    u.lang = 'ja-JP';
+    window.speechSynthesis.speak(u);
+  }
+
+  async function loadLog() {
+    const q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    const el = document.getElementById('log-list');
+    if(snap.empty){ el.innerHTML='<div class="empty">まだ記録がありません</div>'; return; }
+    el.innerHTML = snap.docs.map(d => {
+      const r = d.data();
+      return `<div class="log-item ${r.ok?'ok':'ng'}">
+        <div>
+          <div style="font-size:16px;font-weight:bold;">${r.name}</div>
+          <div style="font-size:12px;color:#888;">${r.date} ${r.timing}薬 ${r.time}</div>
+        </div>
+        <span style="font-size:22px;">${r.ok?'✓':'✗'}</span>
+      </div>`;
+    }).join('');
+  }
+</script>
+</body>
+</html>
