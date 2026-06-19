@@ -10,21 +10,28 @@
     .app { max-width: 420px; margin: 0 auto; padding: 16px; }
     .header { text-align: center; padding: 16px 0; background: #185FA5; color: white; border-radius: 12px; margin-bottom: 16px; }
     .header h1 { font-size: 18px; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; background: #e0e0e0; border-radius: 8px; padding: 4px; }
+    .tab { flex: 1; padding: 8px; text-align: center; font-size: 13px; border-radius: 6px; cursor: pointer; border: none; background: transparent; color: #888; }
+    .tab.active { background: white; color: #185FA5; font-weight: bold; }
+    .panel { display: none; }
+    .panel.active { display: block; }
     .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
     .label { font-size: 12px; color: #888; margin-bottom: 6px; }
-    .inp { width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 10px; font-size: 16px; }
-    .timing-row { display: flex; gap: 8px; margin-top: 4px; }
+    .timing-row { display: flex; gap: 8px; margin-bottom: 12px; }
     .tbtn { flex: 1; padding: 14px; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; border: 1px solid #ddd; background: #f5f5f5; color: #888; }
     .tbtn.sel-朝 { background: #FAEEDA; color: #854F0B; border-color: #EF9F27; }
     .tbtn.sel-昼 { background: #E6F1FB; color: #185FA5; border-color: #378ADD; }
     .tbtn.sel-夜 { background: #EEEDFE; color: #3C3489; border-color: #7F77DD; }
+    .person-list { display: flex; flex-direction: column; gap: 8px; }
+    .person-btn { width: 100%; padding: 16px; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; border: 1px solid #ddd; background: white; color: #333; text-align: left; }
+    .person-btn:active { background: #f0f0f0; }
     .speak-btn { width: 100%; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; border: none; background: #185FA5; color: white; margin-top: 12px; }
     .action-row { display: flex; gap: 10px; margin-top: 12px; }
     .ok-btn { flex: 1; padding: 18px; border-radius: 8px; font-size: 20px; font-weight: bold; cursor: pointer; border: none; background: #3B6D11; color: white; }
     .ng-btn { flex: 1; padding: 18px; border-radius: 8px; font-size: 20px; font-weight: bold; cursor: pointer; border: none; background: #A32D2D; color: white; }
     .result-card { background: #f0f0f0; border-radius: 12px; padding: 16px; margin-top: 12px; display: none; }
     .result-card.show { display: block; }
-    .result-name { font-size: 26px; font-weight: bold; margin-bottom: 4px; }
+    .result-name { font-size: 26px; font-weight: bold; margin-bottom: 8px; }
     .badge { display: inline-block; padding: 5px 16px; border-radius: 20px; font-size: 16px; font-weight: bold; }
     .badge-朝 { background: #FAEEDA; color: #854F0B; }
     .badge-昼 { background: #E6F1FB; color: #185FA5; }
@@ -32,12 +39,11 @@
     .log-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: white; border-radius: 8px; margin-bottom: 6px; }
     .log-item.ok { background: #EAF3DE; }
     .log-item.ng { background: #FCEBEB; }
-    .tabs { display: flex; gap: 4px; margin-bottom: 16px; background: #e0e0e0; border-radius: 8px; padding: 4px; }
-    .tab { flex: 1; padding: 8px; text-align: center; font-size: 13px; border-radius: 6px; cursor: pointer; border: none; background: transparent; color: #888; }
-    .tab.active { background: white; color: #185FA5; font-weight: bold; }
-    .panel { display: none; }
-    .panel.active { display: block; }
     .empty { text-align: center; padding: 20px; color: #aaa; font-size: 14px; }
+    .add-row { display: flex; gap: 8px; margin-top: 12px; }
+    .add-inp { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 10px; font-size: 16px; }
+    .add-btn { padding: 10px 16px; border-radius: 8px; font-size: 14px; border: 1px solid #ddd; background: white; cursor: pointer; }
+    .del-btn { font-size: 12px; color: #aaa; background: none; border: none; cursor: pointer; padding: 4px 8px; }
   </style>
 </head>
 <body>
@@ -47,24 +53,23 @@
   </div>
 
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('input',this)">✏️ 入力</button>
+    <button class="tab active" onclick="switchTab('input',this)">✏️ 投薬確認</button>
+    <button class="tab" onclick="switchTab('members',this)">👥 入居者</button>
     <button class="tab" onclick="switchTab('log',this)">📋 記録</button>
   </div>
 
+  <!-- 投薬確認パネル -->
   <div id="panel-input" class="panel active">
     <div class="card">
-      <div class="label">氏名</div>
-      <input class="inp" id="f-name" placeholder="例：藤原京子" />
-    </div>
-    <div class="card">
-      <div class="label">服薬タイミング</div>
+      <div class="label">① 服薬タイミングを選ぶ</div>
       <div class="timing-row">
         <button class="tbtn" id="btn-朝" onclick="selT('朝')">朝</button>
         <button class="tbtn" id="btn-昼" onclick="selT('昼')">昼</button>
         <button class="tbtn" id="btn-夜" onclick="selT('夜')">夜</button>
       </div>
+      <div class="label">② 入居者を選ぶ</div>
+      <div class="person-list" id="person-list"></div>
     </div>
-    <button class="speak-btn" onclick="doSpeak()">🔊 音声で読み上げる</button>
 
     <div class="result-card" id="result-card">
       <div class="result-name" id="res-name"></div>
@@ -76,6 +81,19 @@
     </div>
   </div>
 
+  <!-- 入居者管理パネル -->
+  <div id="panel-members" class="panel">
+    <div class="card">
+      <div class="label">入居者一覧</div>
+      <div id="member-list"></div>
+      <div class="add-row">
+        <input class="add-inp" id="new-name" placeholder="名前を入力..." />
+        <button class="add-btn" onclick="addMember()">追加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 記録パネル -->
   <div id="panel-log" class="panel">
     <div id="log-list"><div class="empty">まだ記録がありません</div></div>
   </div>
@@ -83,7 +101,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, addDoc, getDocs, orderBy, query } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, orderBy, query } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBLKOfxq12B8McwKlNjnF-zxSYBy3_g0dQ",
@@ -99,29 +117,45 @@
 
   let timing = '';
   let pendingName = '';
-  let pendingTiming = '';
 
+  // タブ切り替え
   window.switchTab = function(tab, el) {
-    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     el.classList.add('active');
-    document.getElementById('panel-'+tab).classList.add('active');
-    if(tab==='log') loadLog();
+    document.getElementById('panel-' + tab).classList.add('active');
+    if(tab === 'log') loadLog();
+    if(tab === 'members') loadMembers();
+    if(tab === 'input') loadPersonList();
   }
 
+  // タイミング選択
   window.selT = function(t) {
     timing = t;
-    ['朝','昼','夜'].forEach(x=>{
-      document.getElementById('btn-'+x).className='tbtn'+(x===t?' sel-'+x:'');
+    ['朝','昼','夜'].forEach(x => {
+      document.getElementById('btn-' + x).className = 'tbtn' + (x === t ? ' sel-' + x : '');
     });
   }
 
-  window.doSpeak = function() {
-    const name = document.getElementById('f-name').value.trim();
-    if(!name){ alert('氏名を入力してください'); return; }
-    if(!timing){ alert('朝・昼・夜を選んでください'); return; }
+  // 入居者リストを投薬確認画面に表示
+  async function loadPersonList() {
+    const snap = await getDocs(collection(db, 'members'));
+    const list = document.getElementById('person-list');
+    if(snap.empty) {
+      list.innerHTML = '<p style="color:#aaa;font-size:13px;">👥 タブから入居者を登録してください</p>';
+      return;
+    }
+    list.innerHTML = snap.docs.map(d => `
+      <button class="person-btn" onclick="selectPerson('${d.data().name}')">
+        👤 ${d.data().name}
+      </button>
+    `).join('');
+  }
+
+  // 入居者を選択して音声読み上げ
+  window.selectPerson = function(name) {
+    if(!timing) { alert('先に朝・昼・夜を選んでください'); return; }
     pendingName = name;
-    pendingTiming = timing;
     document.getElementById('res-name').textContent = name + ' さん';
     const badge = document.getElementById('res-badge');
     badge.textContent = timing + '薬';
@@ -133,41 +167,78 @@
     window.speechSynthesis.speak(u);
   }
 
+  // 投薬記録を保存
   window.saveRecord = async function(ok) {
     const now = new Date();
     await addDoc(collection(db, 'records'), {
       name: pendingName,
-      timing: pendingTiming,
+      timing: timing,
       ok: ok,
       date: now.toLocaleDateString('ja-JP'),
       time: now.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'}),
       createdAt: now
     });
     document.getElementById('result-card').classList.remove('show');
-    document.getElementById('f-name').value = '';
-    timing = '';
-    ['朝','昼','夜'].forEach(x=>document.getElementById('btn-'+x).className='tbtn');
     const u = new SpeechSynthesisUtterance(ok ? '投薬を記録しました。' : '未投薬として記録しました。');
     u.lang = 'ja-JP';
     window.speechSynthesis.speak(u);
   }
 
+  // 入居者一覧を管理画面に表示
+  async function loadMembers() {
+    const snap = await getDocs(collection(db, 'members'));
+    const list = document.getElementById('member-list');
+    if(snap.empty) {
+      list.innerHTML = '<div class="empty">まだ登録されていません</div>';
+      return;
+    }
+    list.innerHTML = snap.docs.map(d => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee;">
+        <span style="font-size:16px;">👤 ${d.data().name}</span>
+        <button class="del-btn" onclick="deleteMember('${d.id}')">削除</button>
+      </div>
+    `).join('');
+  }
+
+  // 入居者を追加
+  window.addMember = async function() {
+    const inp = document.getElementById('new-name');
+    const name = inp.value.trim();
+    if(!name) { alert('名前を入力してください'); return; }
+    await addDoc(collection(db, 'members'), { name });
+    inp.value = '';
+    loadMembers();
+    loadPersonList();
+  }
+
+  // 入居者を削除
+  window.deleteMember = async function(id) {
+    if(!confirm('削除しますか？')) return;
+    await deleteDoc(doc(db, 'members', id));
+    loadMembers();
+    loadPersonList();
+  }
+
+  // 記録一覧を表示
   async function loadLog() {
     const q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
     const snap = await getDocs(q);
     const el = document.getElementById('log-list');
-    if(snap.empty){ el.innerHTML='<div class="empty">まだ記録がありません</div>'; return; }
+    if(snap.empty) { el.innerHTML = '<div class="empty">まだ記録がありません</div>'; return; }
     el.innerHTML = snap.docs.map(d => {
       const r = d.data();
-      return `<div class="log-item ${r.ok?'ok':'ng'}">
+      return `<div class="log-item ${r.ok ? 'ok' : 'ng'}">
         <div>
           <div style="font-size:16px;font-weight:bold;">${r.name}</div>
           <div style="font-size:12px;color:#888;">${r.date} ${r.timing}薬 ${r.time}</div>
         </div>
-        <span style="font-size:22px;">${r.ok?'✓':'✗'}</span>
+        <span style="font-size:22px;">${r.ok ? '✓' : '✗'}</span>
       </div>`;
     }).join('');
   }
+
+  // 初期読み込み
+  loadPersonList();
 </script>
 </body>
 </html>
