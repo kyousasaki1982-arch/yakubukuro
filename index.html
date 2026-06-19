@@ -26,7 +26,6 @@
     .person-list { display: flex; flex-direction: column; gap: 8px; }
     .person-btn { width: 100%; padding: 16px; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; border: 1px solid #ddd; background: white; color: #333; text-align: left; }
     .person-btn:active { background: #f0f0f0; }
-    .speak-btn { width: 100%; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; border: none; background: #185FA5; color: white; margin-top: 12px; }
     .action-row { display: flex; gap: 10px; margin-top: 12px; }
     .ok-btn { flex: 1; padding: 18px; border-radius: 8px; font-size: 20px; font-weight: bold; cursor: pointer; border: none; background: #3B6D11; color: white; }
     .ng-btn { flex: 1; padding: 18px; border-radius: 8px; font-size: 20px; font-weight: bold; cursor: pointer; border: none; background: #A32D2D; color: white; }
@@ -45,6 +44,16 @@
     .add-inp { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 10px; font-size: 16px; }
     .add-btn { padding: 10px 16px; border-radius: 8px; font-size: 14px; border: 1px solid #ddd; background: white; cursor: pointer; }
     .del-btn { font-size: 12px; color: #aaa; background: none; border: none; cursor: pointer; padding: 4px 8px; }
+
+    /* カメラ関連 */
+    .cam-wrap { position: relative; width: 100%; aspect-ratio: 4/3; background: #111; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+    .cam-wrap video { width: 100%; height: 100%; object-fit: cover; }
+    .cam-frame { position: absolute; top: 25%; left: 10%; width: 80%; height: 30%; border: 3px solid rgba(255,255,255,0.8); border-radius: 8px; pointer-events: none; }
+    .cam-status { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; color: white; font-size: 12px; background: rgba(0,0,0,0.5); padding: 6px; }
+    .cam-start-btn { width: 100%; padding: 16px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; border: none; background: #185FA5; color: white; }
+    .detected-banner { background: #EAF3DE; border: 2px solid #97C459; border-radius: 12px; padding: 14px; margin-bottom: 12px; display: none; text-align: center; }
+    .detected-banner.show { display: block; }
+    .detected-banner .dname { font-size: 22px; font-weight: bold; color: #3B6D11; }
   </style>
 </head>
 <body>
@@ -54,13 +63,48 @@
   </div>
 
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('input',this)">✏️ 投薬確認</button>
+    <button class="tab active" onclick="switchTab('camera',this)">📷 カメラ</button>
+    <button class="tab" onclick="switchTab('input',this)">✏️ 手動</button>
     <button class="tab" onclick="switchTab('members',this)">👥 入居者</button>
     <button class="tab" onclick="switchTab('log',this)">📋 記録</button>
   </div>
 
-  <!-- 投薬確認パネル -->
-  <div id="panel-input" class="panel active">
+  <!-- カメラパネル -->
+  <div id="panel-camera" class="panel active">
+    <div class="card">
+      <div class="label">服薬タイミングを選ぶ</div>
+      <div class="timing-row">
+        <button class="tbtn" id="cbtn-朝" onclick="selTCam('朝')">朝</button>
+        <button class="tbtn" id="cbtn-昼" onclick="selTCam('昼')">昼</button>
+        <button class="tbtn" id="cbtn-夜" onclick="selTCam('夜')">夜</button>
+      </div>
+    </div>
+
+    <div class="cam-wrap" id="cam-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="cam-frame"></div>
+      <div class="cam-status" id="cam-status">薬袋の名前部分を枠内に入れてください</div>
+    </div>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <button class="cam-start-btn" id="cam-start-btn" onclick="startCamera()">📷 カメラを起動する</button>
+
+    <div class="detected-banner" id="detected-banner">
+      <div class="dname" id="detected-name"></div>
+      <div style="font-size:13px;color:#639922;margin-top:4px;">を読み取りました</div>
+    </div>
+
+    <div class="result-card" id="result-card-cam">
+      <div class="result-name" id="res-name-cam"></div>
+      <span class="badge" id="res-badge-cam"></span>
+      <div class="action-row">
+        <button class="ok-btn" onclick="saveRecordCam(true)">✓ 投薬した</button>
+        <button class="ng-btn" onclick="saveRecordCam(false)">✗ 未投薬</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 手動入力パネル -->
+  <div id="panel-input" class="panel">
     <div class="card">
       <div class="label">① 服薬タイミングを選ぶ</div>
       <div class="timing-row">
@@ -100,6 +144,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, orderBy, query } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -117,7 +162,14 @@
   const db = getFirestore(app);
 
   let timing = '';
+  let timingCam = '';
   let pendingName = '';
+  let pendingNameCam = '';
+  let membersCache = [];
+  let lastDetectedName = '';
+  let lastDetectedTime = 0;
+  let ocrRunning = false;
+  let ocrLoopActive = false;
 
   // タブ切り替え
   window.switchTab = function(tab, el) {
@@ -128,9 +180,10 @@
     if(tab === 'log') loadLog();
     if(tab === 'members') loadMembers();
     if(tab === 'input') loadPersonList();
+    if(tab !== 'camera') stopOcrLoop();
   }
 
-  // タイミング選択
+  // ===== 手動入力 =====
   window.selT = function(t) {
     timing = t;
     ['朝','昼','夜'].forEach(x => {
@@ -138,22 +191,19 @@
     });
   }
 
-  // 入居者リストを投薬確認画面に表示
   async function loadPersonList() {
     const snap = await getDocs(collection(db, 'members'));
+    membersCache = snap.docs.map(d => d.data().name);
     const list = document.getElementById('person-list');
     if(snap.empty) {
       list.innerHTML = '<p style="color:#aaa;font-size:13px;">👥 タブから入居者を登録してください</p>';
       return;
     }
-    list.innerHTML = snap.docs.map(d => `
-      <button class="person-btn" onclick="selectPerson('${d.data().name}')">
-        👤 ${d.data().name}
-      </button>
+    list.innerHTML = membersCache.map(name => `
+      <button class="person-btn" onclick="selectPerson('${name}')">👤 ${name}</button>
     `).join('');
   }
 
-  // 入居者を選択して音声読み上げ
   window.selectPerson = function(name) {
     if(!timing) { alert('先に朝・昼・夜を選んでください'); return; }
     pendingName = name;
@@ -162,37 +212,135 @@
     badge.textContent = timing + '薬';
     badge.className = 'badge badge-' + timing;
     document.getElementById('result-card').classList.add('show');
-    const u = new SpeechSynthesisUtterance(`${name}さん、${timing}の薬です。確認してください。`);
-    u.lang = 'ja-JP';
-    u.rate = 0.9;
-    window.speechSynthesis.speak(u);
+    speak(`${name}さん、${timing}の薬です。確認してください。`);
   }
 
-  // 投薬記録を保存
   window.saveRecord = async function(ok) {
+    await writeRecord(pendingName, timing, ok);
+    document.getElementById('result-card').classList.remove('show');
+  }
+
+  // ===== カメラOCR =====
+  window.selTCam = function(t) {
+    timingCam = t;
+    ['朝','昼','夜'].forEach(x => {
+      document.getElementById('cbtn-' + x).className = 'tbtn' + (x === t ? ' sel-' + x : '');
+    });
+  }
+
+  window.startCamera = async function() {
+    if(!timingCam) { alert('先に朝・昼・夜を選んでください'); return; }
+    try {
+      // 入居者リストを読み込んでおく
+      const snap = await getDocs(collection(db, 'members'));
+      membersCache = snap.docs.map(d => d.data().name);
+      if(membersCache.length === 0) {
+        alert('入居者が登録されていません。「👥 入居者」タブで登録してください。');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      document.getElementById('video').srcObject = stream;
+      document.getElementById('cam-start-btn').style.display = 'none';
+      document.getElementById('cam-status').textContent = '読み取り中...';
+      startOcrLoop();
+    } catch(e) {
+      alert('カメラを起動できませんでした。カメラの権限を許可してください。');
+    }
+  }
+
+  function startOcrLoop() {
+    ocrLoopActive = true;
+    ocrTick();
+  }
+
+  function stopOcrLoop() {
+    ocrLoopActive = false;
+  }
+
+  async function ocrTick() {
+    if(!ocrLoopActive) return;
+    if(ocrRunning) { setTimeout(ocrTick, 300); return; }
+    ocrRunning = true;
+    try {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      if(video.videoWidth > 0) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        const result = await Tesseract.recognize(canvas, 'jpn', { logger: () => {} });
+        const text = result.data.text.replace(/\s/g, '');
+        checkForMatch(text);
+      }
+    } catch(e) {
+      console.error(e);
+    }
+    ocrRunning = false;
+    if(ocrLoopActive) setTimeout(ocrTick, 800);
+  }
+
+  function checkForMatch(text) {
+    const now = Date.now();
+    for(const name of membersCache) {
+      if(text.includes(name)) {
+        // クールタイムチェック（同じ人を5秒以内に連続検知しない）
+        if(name === lastDetectedName && (now - lastDetectedTime) < 5000) {
+          return;
+        }
+        lastDetectedName = name;
+        lastDetectedTime = now;
+        onPersonDetected(name);
+        return;
+      }
+    }
+  }
+
+  function onPersonDetected(name) {
+    pendingNameCam = name;
+    document.getElementById('detected-name').textContent = '👤 ' + name + ' さん';
+    document.getElementById('detected-banner').classList.add('show');
+    document.getElementById('res-name-cam').textContent = name + ' さん';
+    const badge = document.getElementById('res-badge-cam');
+    badge.textContent = timingCam + '薬';
+    badge.className = 'badge badge-' + timingCam;
+    document.getElementById('result-card-cam').classList.add('show');
+    speak(`${name}さん、${timingCam}の薬です。確認してください。`);
+  }
+
+  window.saveRecordCam = async function(ok) {
+    await writeRecord(pendingNameCam, timingCam, ok);
+    document.getElementById('result-card-cam').classList.remove('show');
+    document.getElementById('detected-banner').classList.remove('show');
+  }
+
+  // ===== 共通：記録保存・音声 =====
+  async function writeRecord(name, tmg, ok) {
     const now = new Date();
     await addDoc(collection(db, 'records'), {
-      name: pendingName,
-      timing: timing,
+      name: name,
+      timing: tmg,
       ok: ok,
       date: now.toLocaleDateString('ja-JP'),
       time: now.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'}),
       createdAt: now
     });
-    document.getElementById('result-card').classList.remove('show');
-    const u = new SpeechSynthesisUtterance(ok ? '投薬を記録しました。' : '未投薬として記録しました。');
+    speak(ok ? '投薬を記録しました。' : '未投薬として記録しました。');
+  }
+
+  function speak(text) {
+    const u = new SpeechSynthesisUtterance(text);
     u.lang = 'ja-JP';
+    u.rate = 0.9;
     window.speechSynthesis.speak(u);
   }
 
-  // 入居者一覧を管理画面に表示
+  // ===== 入居者管理 =====
   async function loadMembers() {
     const snap = await getDocs(collection(db, 'members'));
     const list = document.getElementById('member-list');
-    if(snap.empty) {
-      list.innerHTML = '<div class="empty">まだ登録されていません</div>';
-      return;
-    }
+    if(snap.empty) { list.innerHTML = '<div class="empty">まだ登録されていません</div>'; return; }
     list.innerHTML = snap.docs.map(d => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee;">
         <span style="font-size:16px;">👤 ${d.data().name}</span>
@@ -201,7 +349,6 @@
     `).join('');
   }
 
-  // 入居者を追加
   window.addMember = async function() {
     const inp = document.getElementById('new-name');
     const name = inp.value.trim();
@@ -209,18 +356,15 @@
     await addDoc(collection(db, 'members'), { name });
     inp.value = '';
     loadMembers();
-    loadPersonList();
   }
 
-  // 入居者を削除
   window.deleteMember = async function(id) {
     if(!confirm('削除しますか？')) return;
     await deleteDoc(doc(db, 'members', id));
     loadMembers();
-    loadPersonList();
   }
 
-  // 記録一覧を表示
+  // ===== 記録一覧 =====
   async function loadLog() {
     const q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
     const snap = await getDocs(q);
@@ -237,9 +381,6 @@
       </div>`;
     }).join('');
   }
-
-  // 初期読み込み
-  loadPersonList();
 </script>
 </body>
 </html>
