@@ -196,7 +196,13 @@
   let ocrRunning = false;
   let ocrLoopActive = false;
 
-  const TIMING_WORDS = { '朝': '朝食後', '昼': '昼食後', '夜': '夕食後' };
+  // 「食後」の前の文字でタイミングを判定（OCRの誤読に強い方式）
+  function detectTimingFromText(text) {
+    if (text.includes('朝食後') || text.includes('朝食復')) return '朝';
+    if (text.includes('夕食後') || text.includes('夕食復')) return '夜';
+    if (text.includes('食後') || text.includes('食復')) return '昼'; // 昼は誤認識されやすいため消去法
+    return null;
+  }
 
   // タブ切り替え
   window.switchTab = function(tab, el) {
@@ -333,18 +339,13 @@
     }
   }
 
-  function evaluateDetection(name, text) {
-    // ① タイミングチェック
-    const expectedWord = TIMING_WORDS[timingCam];
-    const otherTimings = Object.keys(TIMING_WORDS).filter(t => t !== timingCam);
-    let foundWrongTiming = null;
-    for(const t of otherTimings) {
-      if(text.includes(TIMING_WORDS[t])) { foundWrongTiming = t; break; }
-    }
-    const hasExpectedTiming = text.includes(expectedWord);
+ function evaluateDetection(name, text) {
+    // ① タイミングチェック（「食後」前の文字で判定）
+    const detectedTiming = detectTimingFromText(text);
 
-    if(foundWrongTiming && !hasExpectedTiming) {
-      warnDetection(name, `これは${name}さんの${timingCam}薬ではありません`, `袋には「${TIMING_WORDS[foundWrongTiming]}」と書かれています`);
+    if(detectedTiming && detectedTiming !== timingCam) {
+      const labels = {'朝':'朝食後の薬', '昼':'昼食後の薬', '夜':'夕食後の薬'};
+      warnDetection(name, `これは${name}さんの${timingCam}薬ではありません`, `袋には「${labels[detectedTiming]}」と書かれています`);
       return;
     }
 
