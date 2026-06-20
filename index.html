@@ -106,6 +106,10 @@
       <div class="cam-frame"></div>
       <div class="cam-status" id="cam-status">薬袋全体（名前・服用時・日付）を枠内に入れてください</div>
     </div>
+    <div class="card" style="font-size:12px;color:#888;word-break:break-all;">
+      <div class="label">🔍 OCR読み取り結果（デバッグ用）</div>
+      <div id="debug-text">まだ読み取っていません</div>
+    </div>
     <canvas id="canvas" style="display:none;"></canvas>
     <button class="cam-start-btn" id="cam-start-btn" onclick="startCamera()">📷 カメラを起動する</button>
 
@@ -295,6 +299,7 @@
         const result = await Tesseract.recognize(canvas, 'jpn', { logger: () => {} });
         const rawText = result.data.text;
         const text = rawText.replace(/\s/g, '');
+        document.getElementById('debug-text').textContent = text || '(文字なし)';
         checkForMatch(text);
       }
     } catch(e) {
