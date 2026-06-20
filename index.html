@@ -36,9 +36,6 @@
     .badge-朝 { background: #FAEEDA; color: #854F0B; }
     .badge-昼 { background: #E6F1FB; color: #185FA5; }
     .badge-夜 { background: #EEEDFE; color: #3C3489; }
-    .log-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: white; border-radius: 8px; margin-bottom: 6px; }
-    .log-item.ok { background: #EAF3DE; }
-    .log-item.ng { background: #FCEBEB; }
     .empty { text-align: center; padding: 20px; color: #aaa; font-size: 14px; }
     .add-row { display: flex; gap: 8px; margin-top: 12px; }
     .add-inp { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 10px; font-size: 16px; }
@@ -54,6 +51,24 @@
     .detected-banner { background: #EAF3DE; border: 2px solid #97C459; border-radius: 12px; padding: 14px; margin-bottom: 12px; display: none; text-align: center; }
     .detected-banner.show { display: block; }
     .detected-banner .dname { font-size: 22px; font-weight: bold; color: #3B6D11; }
+
+    /* 記録テーブル関連 */
+    .date-group { margin-bottom: 16px; }
+    .date-title { font-size: 15px; font-weight: bold; color: #185FA5; padding: 8px 4px; border-bottom: 2px solid #185FA5; margin-bottom: 8px; }
+    .timing-block { margin-bottom: 10px; }
+    .timing-block-title { display: inline-block; font-size: 13px; font-weight: bold; padding: 4px 12px; border-radius: 20px; margin-bottom: 6px; }
+    .timing-block-title.t-朝 { background: #FAEEDA; color: #854F0B; }
+    .timing-block-title.t-昼 { background: #E6F1FB; color: #185FA5; }
+    .timing-block-title.t-夜 { background: #EEEDFE; color: #3C3489; }
+    .record-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+    .record-table td { padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #eee; }
+    .record-table tr:last-child td { border-bottom: none; }
+    .record-table .name-cell { font-weight: bold; }
+    .record-table .mark-cell { text-align: right; width: 60px; }
+    .mark-ok { color: #3B6D11; font-size: 18px; font-weight: bold; }
+    .mark-ng { color: #A32D2D; font-size: 18px; font-weight: bold; }
+    .mark-none { color: #ccc; font-size: 18px; }
+    .time-cell { color: #aaa; font-size: 11px; text-align: right; width: 50px; }
   </style>
 </head>
 <body>
@@ -138,7 +153,7 @@
     </div>
   </div>
 
-  <!-- 記録パネル -->
+  <!-- 記録パネル（テーブル形式） -->
   <div id="panel-log" class="panel">
     <div id="log-list"><div class="empty">まだ記録がありません</div></div>
   </div>
@@ -231,7 +246,6 @@
   window.startCamera = async function() {
     if(!timingCam) { alert('先に朝・昼・夜を選んでください'); return; }
     try {
-      // 入居者リストを読み込んでおく
       const snap = await getDocs(collection(db, 'members'));
       membersCache = snap.docs.map(d => d.data().name);
       if(membersCache.length === 0) {
@@ -285,7 +299,6 @@
     const now = Date.now();
     for(const name of membersCache) {
       if(text.includes(name)) {
-        // クールタイムチェック（同じ人を5秒以内に連続検知しない）
         if(name === lastDetectedName && (now - lastDetectedTime) < 5000) {
           return;
         }
@@ -364,22 +377,58 @@
     loadMembers();
   }
 
-  // ===== 記録一覧 =====
+  // ===== 記録一覧（テーブル形式：日付→朝昼夜→入居者ごとの○×） =====
   async function loadLog() {
     const q = query(collection(db, 'records'), orderBy('createdAt', 'desc'));
     const snap = await getDocs(q);
     const el = document.getElementById('log-list');
     if(snap.empty) { el.innerHTML = '<div class="empty">まだ記録がありません</div>'; return; }
-    el.innerHTML = snap.docs.map(d => {
+
+    // 日付ごとにグループ化
+    const byDate = {};
+    snap.docs.forEach(d => {
       const r = d.data();
-      return `<div class="log-item ${r.ok ? 'ok' : 'ng'}">
-        <div>
-          <div style="font-size:16px;font-weight:bold;">${r.name}</div>
-          <div style="font-size:12px;color:#888;">${r.date} ${r.timing}薬 ${r.time}</div>
-        </div>
-        <span style="font-size:22px;">${r.ok ? '✓' : '✗'}</span>
-      </div>`;
-    }).join('');
+      if(!byDate[r.date]) byDate[r.date] = [];
+      byDate[r.date].push(r);
+    });
+
+    const timingOrder = ['朝', '昼', '夜'];
+    let html = '';
+
+    for(const date of Object.keys(byDate)) {
+      html += `<div class="date-group"><div class="date-title">📅 ${date}</div>`;
+      const records = byDate[date];
+
+      for(const tmg of timingOrder) {
+        const recs = records.filter(r => r.timing === tmg);
+        if(recs.length === 0) continue;
+
+        // 同じ人が複数回記録されている場合は最新のものだけ表示
+        const latestByName = {};
+        recs.forEach(r => { latestByName[r.name] = r; }); // 配列は新しい順なので最初に出てきたのが最新
+
+        html += `<div class="timing-block">
+          <span class="timing-block-title t-${tmg}">${tmg}薬</span>
+          <table class="record-table"><tbody>`;
+
+        for(const name of Object.keys(latestByName)) {
+          const r = latestByName[name];
+          const markClass = r.ok ? 'mark-ok' : 'mark-ng';
+          const mark = r.ok ? '○' : '×';
+          html += `<tr>
+            <td class="name-cell">${name}</td>
+            <td class="mark-cell"><span class="${markClass}">${mark}</span></td>
+            <td class="time-cell">${r.time}</td>
+          </tr>`;
+        }
+
+        html += `</tbody></table></div>`;
+      }
+
+      html += `</div>`;
+    }
+
+    el.innerHTML = html;
   }
 </script>
 </body>
