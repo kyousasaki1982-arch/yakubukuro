@@ -340,12 +340,13 @@
   }
 
  function evaluateDetection(name, text) {
-    // ① タイミングチェック（「食後」前の文字で判定）
     const detectedTiming = detectTimingFromText(text);
+    const labels = {'朝':'朝食後', '昼':'昼食後', '夜':'夕食後'};
+    const expectedLabel = labels[timingCam];
 
+    // ① タイミングが違う場合 → 即警告（最優先）
     if(detectedTiming && detectedTiming !== timingCam) {
-      const labels = {'朝':'朝食後の薬', '昼':'昼食後の薬', '夜':'夕食後の薬'};
-      warnDetection(name, `これは${name}さんの${timingCam}薬ではありません`, `袋には「${labels[detectedTiming]}」と書かれています`);
+      warnDetection(name, `${name}さん、これは${expectedLabel}ではありません。確認してください`);
       return;
     }
 
@@ -353,46 +354,57 @@
     const todayStrings = getTodayStrings();
     const hasToday = todayStrings.some(s => text.includes(s));
     const dateMatch = text.match(/(\d{1,2})月(\d{1,2})日/);
+    const dateOk = dateMatch && hasToday;
 
-    if(dateMatch && !hasToday) {
-      // 日付ははっきり読み取れたが、今日と違う
-      warnDetection(name, `これは今日の薬ではありません`, `袋の日付：${dateMatch[0]}`);
+    if(!dateOk) {
+      // 名前・タイミングはOKだが日付が確認できない（読めない or 今日と違う）
+      confirmWithDateIssue(name, expectedLabel);
       return;
     }
 
-    if(!dateMatch) {
-      // 日付が読み取れなかった → 安全側に倒して警告
-      warnDetection(name, `日付が確認できません`, `日付を目で確認してください`);
-      return;
-    }
-
-    // ③ 全部OK（名前・タイミング一致、日付も今日と一致）→ 通常の確認フローへ
-    onPersonDetected(name, dateMatch[0]);
+    // ③ すべてOK
+    onPersonDetected(name, expectedLabel, dateMatch[0]);
   }
 
-  function warnDetection(name, mainMsg, subMsg, isWarning) {
+  function warnDetection(name, mainMsg) {
     const banner = document.getElementById('detected-banner');
     banner.className = 'detected-banner show warn-style';
     document.getElementById('detected-name').textContent = '⚠️ ' + mainMsg;
-    document.getElementById('detected-sub').textContent = subMsg;
+    document.getElementById('detected-sub').textContent = '';
     document.getElementById('result-card-cam').classList.remove('show');
-    window.speechSynthesis.cancel(); // 前の読み上げを止めて警告を優先
-    speak(mainMsg + '。確認してください。');
+    window.speechSynthesis.cancel();
+    speak(mainMsg);
     setTimeout(() => { banner.classList.remove('show'); }, 4000);
   }
 
-  function onPersonDetected(name, dateLabel) {
+  function onPersonDetected(name, timingLabel, dateLabel) {
     pendingNameCam = name;
     const banner = document.getElementById('detected-banner');
     banner.className = 'detected-banner show ok-style';
     document.getElementById('detected-name').textContent = '👤 ' + name + ' さん';
-    document.getElementById('detected-sub').textContent = dateLabel + ' を読み取りました';
+    document.getElementById('detected-sub').textContent = timingLabel + ' ' + dateLabel + ' を読み取りました';
     document.getElementById('res-name-cam').textContent = name + ' さん';
     const badge = document.getElementById('res-badge-cam');
     badge.textContent = timingCam + '薬';
     badge.className = 'badge badge-' + timingCam;
     document.getElementById('result-card-cam').classList.add('show');
-    speak(`${name}さん、${dateLabel}、${timingCam}の薬です。確認してください。`);
+    window.speechSynthesis.cancel();
+    speak(`${name}さん、${timingLabel}、${dateLabel}の薬です。`);
+  }
+
+  function confirmWithDateIssue(name, timingLabel) {
+    pendingNameCam = name;
+    const banner = document.getElementById('detected-banner');
+    banner.className = 'detected-banner show warn-style';
+    document.getElementById('detected-name').textContent = '👤 ' + name + ' さん（日付要確認）';
+    document.getElementById('detected-sub').textContent = '日付が確認できません';
+    document.getElementById('res-name-cam').textContent = name + ' さん';
+    const badge = document.getElementById('res-badge-cam');
+    badge.textContent = timingCam + '薬';
+    badge.className = 'badge badge-' + timingCam;
+    document.getElementById('result-card-cam').classList.add('show');
+    window.speechSynthesis.cancel();
+    speak(`${name}さん、${timingLabel}、日付が確認できません`);
   }
 
   window.saveRecordCam = async function(ok) {
