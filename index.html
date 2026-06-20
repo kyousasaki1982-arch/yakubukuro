@@ -345,46 +345,47 @@
 
     if(detectedTiming && detectedTiming !== timingCam) {
       const labels = {'朝':'朝食後の薬', '昼':'昼食後の薬', '夜':'夕食後の薬'};
-      warnDetection(name, `これは${name}さんの${timingCam}薬ではありません`, `袋には「${labels[detectedTiming]}」と書かれています`);
+      warnDetection(name, `これは${name}さんの${timingCam}薬ではありません`, `袋には「${labels[detectedTiming]}」と書かれています`, true);
       return;
     }
 
     // ② 日付チェック
     const todayStrings = getTodayStrings();
     const hasToday = todayStrings.some(s => text.includes(s));
-    // 日付らしき文字列（n月n日）を抽出して「今日じゃない日付」が含まれるか確認
     const dateMatch = text.match(/(\d{1,2})月(\d{1,2})日/);
     if(dateMatch && !hasToday) {
-      warnDetection(name, `これは今日の薬ではありません`, `袋の日付：${dateMatch[0]}`);
+      warnDetection(name, `これは今日の薬ではありません`, `袋の日付：${dateMatch[0]}`, true);
       return;
     }
 
-    // ③ 全部OK → 通常の確認フローへ
-    onPersonDetected(name);
+    // ③ 全部OK → 通常の確認フローへ（読み取った日付があればそれを使う、なければ今日の日付）
+    const dateLabel = dateMatch ? dateMatch[0] : `${new Date().getMonth()+1}月${new Date().getDate()}日`;
+    onPersonDetected(name, dateLabel);
   }
 
-  function warnDetection(name, mainMsg, subMsg) {
+  function warnDetection(name, mainMsg, subMsg, isWarning) {
     const banner = document.getElementById('detected-banner');
     banner.className = 'detected-banner show warn-style';
     document.getElementById('detected-name').textContent = '⚠️ ' + mainMsg;
     document.getElementById('detected-sub').textContent = subMsg;
     document.getElementById('result-card-cam').classList.remove('show');
+    window.speechSynthesis.cancel(); // 前の読み上げを止めて警告を優先
     speak(mainMsg + '。確認してください。');
     setTimeout(() => { banner.classList.remove('show'); }, 4000);
   }
 
-  function onPersonDetected(name) {
+  function onPersonDetected(name, dateLabel) {
     pendingNameCam = name;
     const banner = document.getElementById('detected-banner');
     banner.className = 'detected-banner show ok-style';
     document.getElementById('detected-name').textContent = '👤 ' + name + ' さん';
-    document.getElementById('detected-sub').textContent = 'を読み取りました';
+    document.getElementById('detected-sub').textContent = dateLabel + ' を読み取りました';
     document.getElementById('res-name-cam').textContent = name + ' さん';
     const badge = document.getElementById('res-badge-cam');
     badge.textContent = timingCam + '薬';
     badge.className = 'badge badge-' + timingCam;
     document.getElementById('result-card-cam').classList.add('show');
-    speak(`${name}さん、${timingCam}の薬です。確認してください。`);
+    speak(`${name}さん、${dateLabel}、${timingCam}の薬です。確認してください。`);
   }
 
   window.saveRecordCam = async function(ok) {
