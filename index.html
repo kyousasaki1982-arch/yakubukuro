@@ -45,12 +45,19 @@
     /* カメラ関連 */
     .cam-wrap { position: relative; width: 100%; aspect-ratio: 4/3; background: #111; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
     .cam-wrap video { width: 100%; height: 100%; object-fit: cover; }
-    .cam-frame { position: absolute; top: 25%; left: 10%; width: 80%; height: 30%; border: 3px solid rgba(255,255,255,0.8); border-radius: 8px; pointer-events: none; }
+    .cam-frame { position: absolute; top: 20%; left: 8%; width: 84%; height: 40%; border: 3px solid rgba(255,255,255,0.8); border-radius: 8px; pointer-events: none; }
     .cam-status { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; color: white; font-size: 12px; background: rgba(0,0,0,0.5); padding: 6px; }
     .cam-start-btn { width: 100%; padding: 16px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; border: none; background: #185FA5; color: white; }
-    .detected-banner { background: #EAF3DE; border: 2px solid #97C459; border-radius: 12px; padding: 14px; margin-bottom: 12px; display: none; text-align: center; }
+    .detected-banner { border: 2px solid; border-radius: 12px; padding: 14px; margin-bottom: 12px; display: none; text-align: center; }
     .detected-banner.show { display: block; }
-    .detected-banner .dname { font-size: 22px; font-weight: bold; color: #3B6D11; }
+    .detected-banner.ok-style { background: #EAF3DE; border-color: #97C459; }
+    .detected-banner.warn-style { background: #FCEBEB; border-color: #F09595; }
+    .detected-banner .dname { font-size: 22px; font-weight: bold; }
+    .detected-banner.ok-style .dname { color: #3B6D11; }
+    .detected-banner.warn-style .dname { color: #A32D2D; }
+    .detected-banner .dsub { font-size: 13px; margin-top: 4px; }
+    .detected-banner.ok-style .dsub { color: #639922; }
+    .detected-banner.warn-style .dsub { color: #C24545; }
 
     /* 記録テーブル関連 */
     .date-group { margin-bottom: 16px; }
@@ -67,7 +74,6 @@
     .record-table .mark-cell { text-align: right; width: 60px; }
     .mark-ok { color: #3B6D11; font-size: 18px; font-weight: bold; }
     .mark-ng { color: #A32D2D; font-size: 18px; font-weight: bold; }
-    .mark-none { color: #ccc; font-size: 18px; }
     .time-cell { color: #aaa; font-size: 11px; text-align: right; width: 50px; }
   </style>
 </head>
@@ -98,14 +104,14 @@
     <div class="cam-wrap" id="cam-wrap">
       <video id="video" autoplay playsinline muted></video>
       <div class="cam-frame"></div>
-      <div class="cam-status" id="cam-status">薬袋の名前部分を枠内に入れてください</div>
+      <div class="cam-status" id="cam-status">薬袋全体（名前・服用時・日付）を枠内に入れてください</div>
     </div>
     <canvas id="canvas" style="display:none;"></canvas>
     <button class="cam-start-btn" id="cam-start-btn" onclick="startCamera()">📷 カメラを起動する</button>
 
     <div class="detected-banner" id="detected-banner">
       <div class="dname" id="detected-name"></div>
-      <div style="font-size:13px;color:#639922;margin-top:4px;">を読み取りました</div>
+      <div class="dsub" id="detected-sub"></div>
     </div>
 
     <div class="result-card" id="result-card-cam">
@@ -181,10 +187,12 @@
   let pendingName = '';
   let pendingNameCam = '';
   let membersCache = [];
-  let lastDetectedName = '';
+  let lastDetectedKey = '';
   let lastDetectedTime = 0;
   let ocrRunning = false;
   let ocrLoopActive = false;
+
+  const TIMING_WORDS = { '朝': '朝食後', '昼': '昼食後', '夜': '夕食後' };
 
   // タブ切り替え
   window.switchTab = function(tab, el) {
@@ -285,7 +293,8 @@
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
         const result = await Tesseract.recognize(canvas, 'jpn', { logger: () => {} });
-        const text = result.data.text.replace(/\s/g, '');
+        const rawText = result.data.text;
+        const text = rawText.replace(/\s/g, '');
         checkForMatch(text);
       }
     } catch(e) {
@@ -295,25 +304,75 @@
     if(ocrLoopActive) setTimeout(ocrTick, 800);
   }
 
+  // 今日の日付を「6月19日」形式と「6/19」形式の両方で用意（OCR表記ゆれ対応）
+  function getTodayStrings() {
+    const now = new Date();
+    const m = now.getMonth() + 1;
+    const d = now.getDate();
+    return [`${m}月${d}日`, `${m}/${d}`];
+  }
+
   function checkForMatch(text) {
     const now = Date.now();
     for(const name of membersCache) {
       if(text.includes(name)) {
-        if(name === lastDetectedName && (now - lastDetectedTime) < 5000) {
+        const key = name; // 同一人物のクールタイム管理キー
+        if(key === lastDetectedKey && (now - lastDetectedTime) < 5000) {
           return;
         }
-        lastDetectedName = name;
+        lastDetectedKey = key;
         lastDetectedTime = now;
-        onPersonDetected(name);
+        evaluateDetection(name, text);
         return;
       }
     }
   }
 
+  function evaluateDetection(name, text) {
+    // ① タイミングチェック
+    const expectedWord = TIMING_WORDS[timingCam];
+    const otherTimings = Object.keys(TIMING_WORDS).filter(t => t !== timingCam);
+    let foundWrongTiming = null;
+    for(const t of otherTimings) {
+      if(text.includes(TIMING_WORDS[t])) { foundWrongTiming = t; break; }
+    }
+    const hasExpectedTiming = text.includes(expectedWord);
+
+    if(foundWrongTiming && !hasExpectedTiming) {
+      warnDetection(name, `これは${name}さんの${timingCam}薬ではありません`, `袋には「${TIMING_WORDS[foundWrongTiming]}」と書かれています`);
+      return;
+    }
+
+    // ② 日付チェック
+    const todayStrings = getTodayStrings();
+    const hasToday = todayStrings.some(s => text.includes(s));
+    // 日付らしき文字列（n月n日）を抽出して「今日じゃない日付」が含まれるか確認
+    const dateMatch = text.match(/(\d{1,2})月(\d{1,2})日/);
+    if(dateMatch && !hasToday) {
+      warnDetection(name, `これは今日の薬ではありません`, `袋の日付：${dateMatch[0]}`);
+      return;
+    }
+
+    // ③ 全部OK → 通常の確認フローへ
+    onPersonDetected(name);
+  }
+
+  function warnDetection(name, mainMsg, subMsg) {
+    const banner = document.getElementById('detected-banner');
+    banner.className = 'detected-banner show warn-style';
+    document.getElementById('detected-name').textContent = '⚠️ ' + mainMsg;
+    document.getElementById('detected-sub').textContent = subMsg;
+    document.getElementById('result-card-cam').classList.remove('show');
+    speak(mainMsg + '。確認してください。');
+    setTimeout(() => { banner.classList.remove('show'); }, 4000);
+  }
+
   function onPersonDetected(name) {
     pendingNameCam = name;
+    const banner = document.getElementById('detected-banner');
+    banner.className = 'detected-banner show ok-style';
     document.getElementById('detected-name').textContent = '👤 ' + name + ' さん';
-    document.getElementById('detected-banner').classList.add('show');
+    document.getElementById('detected-sub').textContent = 'を読み取りました';
     document.getElementById('res-name-cam').textContent = name + ' さん';
     const badge = document.getElementById('res-badge-cam');
     badge.textContent = timingCam + '薬';
@@ -384,7 +443,6 @@
     const el = document.getElementById('log-list');
     if(snap.empty) { el.innerHTML = '<div class="empty">まだ記録がありません</div>'; return; }
 
-    // 日付ごとにグループ化
     const byDate = {};
     snap.docs.forEach(d => {
       const r = d.data();
@@ -403,9 +461,8 @@
         const recs = records.filter(r => r.timing === tmg);
         if(recs.length === 0) continue;
 
-        // 同じ人が複数回記録されている場合は最新のものだけ表示
         const latestByName = {};
-        recs.forEach(r => { latestByName[r.name] = r; }); // 配列は新しい順なので最初に出てきたのが最新
+        recs.forEach(r => { latestByName[r.name] = r; });
 
         html += `<div class="timing-block">
           <span class="timing-block-title t-${tmg}">${tmg}薬</span>
